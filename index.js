@@ -7,30 +7,40 @@ const { CompositeDisposable } = require('atom')
 module.exports = {
   activate() {
     this.subscriptions = new CompositeDisposable()
-    this.subscriptions.add(atom.workspace.observeTextEditors(textEditor => {
-      this.subscriptions.add(textEditor.onDidSave(handleDidSave.bind(this)))
-    }))
+    this.subscriptions.add(
+      atom.workspace.observeTextEditors(textEditor => {
+        this.subscriptions.add(textEditor.onDidSave(handleDidSave.bind(this)))
+      })
+    )
   }
 }
 
-function handleDidSave() {
-  const localConfigPath = path.join(process.cwd(), '.tcr')
-  const homeConfigPath = path.join(os.homedir(), '.tcr')
-  if (fs.existsSync(localConfigPath)) {
-    execTcr(localConfigPath)
-  } else if (fs.existsSync(homeConfigPath)) {
-    execTcr(homeConfigPath)
+function handleDidSave(event) {
+  const configPath = findConfigPath(event.path)
+  if (configPath) {
+    execTcr(configPath)
   }
+}
+
+function findConfigPath(startPath) {
+  const potentialPath = path.join(startPath, './.tcr')
+  if (fs.existsSync(potentialPath)) return potentialPath
+  if (startPath === os.homedir()) return null
+  return findConfigPath(path.join(startPath, '..'))
 }
 
 function execTcr(configPath) {
   const config = parseConfig(configPath)
-  exec(config.test, {}, (err, stdout, stderr) => {
-    fs.writeFileSync('./.tcr-feedback', `STDERR\n------\n${stderr}\n\nSTDOUT\n------\n${stdout}`)
+  const cwd = path.join(configPath, '..')
+  exec(config.test, { cwd }, (err, stdout, stderr) => {
+    fs.writeFileSync(
+      path.join(cwd, './.tcr-feedback'),
+      `STDERR\n------\n${stderr}\n\nSTDOUT\n------\n${stdout}`
+    )
     if (err) {
-      execWithErrorNotification(config.revert)
+      execWithErrorNotification(config.revert, cwd)
     } else {
-      execWithErrorNotification(config.commit)
+      execWithErrorNotification(config.commit, cwd)
     }
   })
 }
@@ -48,12 +58,13 @@ function parseConfig(configPath) {
 
 function showErrorNotification({ message, detail }) {
   atom.notifications.addError(message, {
-    detail, dismissable: true
+    detail,
+    dismissable: true
   })
 }
 
-function execWithErrorNotification(command) {
-  exec(command, {}, (err, stdout, stderr) => {
+function execWithErrorNotification(command, cwd) {
+  exec(command, { cwd }, (err, stdout, stderr) => {
     if (err) {
       showErrorNotification({
         message: `atom-tcr failed running ${command}`,
