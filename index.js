@@ -12,12 +12,20 @@ module.exports = {
         this.subscriptions.add(textEditor.onDidSave(handleDidSave.bind(this)))
       })
     )
+  },
+
+  consumeStatusBar(statusBar) {
+    const tileElement = createStatusTile()
+    const statusBarTile = statusBar.addLeftTile({
+      item: tileElement,
+      priority: 1000,
+    })
   }
 }
 
 function handleDidSave(event) {
   const configPath = findConfigPath(event.path)
-  if (configPath) {
+  if (isTcrEnabled() && configPath) {
     execTcr(configPath)
   }
 }
@@ -72,4 +80,41 @@ function execWithErrorNotification(command, cwd) {
       })
     }
   })
+}
+
+function isTcrEnabled() {
+  return !atom.config.get('tcr-atom.tcr-disabled')
+}
+
+function enableTcr(enabled) {
+  atom.config.set('tcr-atom.tcr-disabled', !enabled)
+}
+
+function createStatusTile() {
+  const element = document.createElement('div')
+  const textNode = document.createTextNode('TCR')
+
+  element.appendChild(textNode)
+  element.classList.add('inline-block')
+
+  const configuredAsEnabled = isTcrEnabled()
+  updateStatusTile({ element, enabled: configuredAsEnabled })
+  element.dataset.tcrAtomEnabled = configuredAsEnabled
+
+  element.addEventListener('click', () => {
+    const enabled = element.dataset.tcrAtomEnabled === 'false'
+    element.dataset.tcrAtomEnabled = enabled
+    enableTcr(enabled)
+    updateStatusTile({ element, enabled })
+  })
+
+  return element
+}
+
+function updateStatusTile({ element, enabled }) {
+  if (enabled) {
+    element.classList.add('text-success')
+  } else {
+    element.classList.remove('text-success')
+  }
 }
